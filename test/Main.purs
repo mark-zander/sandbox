@@ -10,13 +10,32 @@ import Data.Foldable
 import Test.Unit (TestSuite, suite, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
+import Test.QuickCheck
+import Test.QuickCheck.Laws (checkLaws)
+import Test.QuickCheck.Laws.Data as Data
+import Type.Proxy (Proxy(..), Proxy2(..))
+
 
 import Tables
+import Multivec
+import GeoAlg
 
 main :: Effect Unit
 main = do
   sizeTest
   subsetTest
+  quickCheck \x y -> eq (aScalarInt x + y) (y + x)
+  quickCheck \x y -> eq (aGeoInt x + y) (y + x)
+  checkLaws "GeoAlg" do
+    Data.checkSemiring prxGeoAlg
+      where
+      prxGeoAlg = Proxy :: Proxy (GeoAlg Int)
+
+aGeoInt :: GeoAlg Int -> GeoAlg Int
+aGeoInt = id
+
+aScalarInt :: AscalarRec Int () -> AscalarRec Int ()
+aScalarInt = id
 
 sizeTest :: Effect Unit
 sizeTest = runTest do
@@ -56,3 +75,4 @@ eqTest t1 t2
   | t1 == t2  = " ="
   | t2 == "0" = " 0"
   | otherwise = " X"
+

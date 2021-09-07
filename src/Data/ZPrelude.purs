@@ -5,12 +5,14 @@ module ZPrelude
     , (>>)
     , (//)
     , fromChoice
+    , sq
+    , id
     , module ReExports
     ) where
 
 import Control.Semigroupoid (compose, composeFlipped)
 import Data.Function (apply, applyFlipped, flip, const)
-import Prelude hiding (($), (#)) as ReExports
+import Prelude as ReExports
 import Data.Foldable
 
 -- from Paxl.Prelude
@@ -24,3 +26,10 @@ infixl 9 composeFlipped as >>
 fromChoice :: forall a f. Foldable f => f a -> a -> a
 fromChoice = flip (foldr const)
 infix 0 fromChoice as //
+
+sq :: forall a. ReExports.Semiring a => a -> a
+sq x = ReExports.mul x x
+
+id :: forall c t. ReExports.Category c => c t t
+id = ReExports.identity
+

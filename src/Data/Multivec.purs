@@ -4,9 +4,11 @@ import ZPrelude
 
 -- import Prim.Row
 
+import Data.Array (zipWith)
 import Record
-
 import Data.Either
+import Math
+import Data.Foldable
 
 -- Rows - basic elements of Projective GA
 
@@ -23,6 +25,8 @@ type TrivectorsRow a r =
     (e321 :: a , e124 :: a , e314 :: a , e234 :: a | r)
 
 type ApseudoRow a r = ( e1234 :: a | r )
+
+data BkWt = Bulk | Weight
 
 -- Rows - combining basic PGA elements
 
@@ -265,26 +269,19 @@ setFlector x = flectorU (setVectors x) (setTrivectors x)
 setMultivec :: forall a. a -> MultivecRec a ()
 setMultivec x = multivecU (setMotor x) (setFlector x)
 
-id :: forall c t. Category c => c t t
-id = identity
-
-ascalar0 :: forall a. Ring a => AscalarRec a ()
-ascalar0 = setAscalar zero
-apseudo0 :: forall a. Ring a => ApseudoRec a ()
-apseudo0 = setApseudo zero
-vectors0 :: forall a. Ring a => VectorsRec a ()
-vectors0 = setVectors zero
-bivectors0 :: forall a. Ring a => BivectorsRec a ()
-bivectors0 = setBivectors zero
-trivectors0 :: forall a. Ring a => TrivectorsRec a ()
-trivectors0 = setTrivectors zero
-
-mvzero :: forall a. Ring a => MultivecRec a ()
-mvzero = setMultivec zero
+ascalar0 = zero :: forall a. Semiring a => AscalarRec a ()
+apseudo0 = zero :: forall a. Semiring a => ApseudoRec a ()
+vectors0 = zero :: forall a. Semiring a => VectorsRec a ()
+bivectors0 = zero :: forall a. Semiring a => BivectorsRec a ()
+trivectors0
+    = zero :: forall a. Semiring a => TrivectorsRec a ()
+motor0 = zero :: forall a. Semiring a => MotorRec a ()
+flector0 = zero :: forall a. Semiring a => FlectorRec a ()
+mvzero = zero :: forall a. Semiring a => MultivecRec a ()
 
 -- find subcomponents of a motor
 subMotor ::
-    forall a r. Eq a => Ring a => MotorRec a r -> Int
+    forall a r. Eq a => Semiring a => MotorRec a r -> Int
 subMotor x = let
     is = if ascalar0 == exAscalar id x then 0 else 1
     ib = if bivectors0 == exBivectors id x then 0 else 2
@@ -293,7 +290,7 @@ subMotor x = let
 
 -- find subcomponents of a flector
 subFlector ::
-    forall a r. Eq a => Ring a => FlectorRec a r -> Int
+    forall a r. Eq a => Semiring a => FlectorRec a r -> Int
 subFlector x = let
     iv = if vectors0 == exVectors id x then 0 else 8
     it = if trivectors0 == exTrivectors id x then 0 else 16
@@ -301,6 +298,108 @@ subFlector x = let
 
 -- find subcomponents of a multivec
 subMultivec ::
-    forall a r. Eq a => Ring a => MultivecRec a r -> Int
+    forall a r. Eq a => Semiring a => MultivecRec a r -> Int
 subMultivec x = subMotor x + subFlector x
 
+compAscalar :: forall a b r. (a -> b) ->
+    AscalarRec a r -> ApseudoRec b ()
+compAscalar f { e } = { e1234: f e }
+
+compApseudo :: forall a b r. (a -> b) ->
+    ApseudoRec a r -> AscalarRec b ()
+compApseudo f { e1234 } = { e: f e1234 }
+
+compBivectors :: forall a b r. (a -> b) ->
+    BivectorsRec a r -> BivectorsRec b ()
+compBivectors f { e23, e31, e12, e43, e42, e41 } =
+    { e23: f e41, e31: f e42, e12: f e43
+    , e43: f e12, e42: f e31, e41: f e23 }
+
+compVectors :: forall a b r. (a -> b) ->
+    VectorsRec a r -> TrivectorsRec b ()
+compVectors f { e1, e2, e3, e4 } =
+    { e321: f e4, e124: f e3, e314: f e2, e234: f e1 }
+
+compTrivectors :: forall a b r. (a -> b) ->
+    TrivectorsRec a r -> VectorsRec b ()
+compTrivectors f { e321, e124, e314, e234 } =
+    { e1: f e234, e2: f e314
+    , e3: f e124, e4: f e321 }
+
+compMotor :: forall a b r. (a -> b) ->
+    MotorRec a r -> MotorRec b ()
+compMotor f x = motorU (compApseudo f x)
+    (compBivectors f x) (compAscalar f x)
+
+compFlector :: forall a b r. (a -> b) ->
+    FlectorRec a r -> FlectorRec b ()
+compFlector f x =
+    flectorU (compTrivectors f x) (compVectors f x)
+
+compMultivec :: forall a b. (a -> b) ->
+    MultivecRec a () -> MultivecRec b ()
+compMultivec f x =
+    multivecU (compMotor f x) (compFlector f x)
+
+
+bwAscalar :: forall a r. Semiring a =>
+    AscalarRec a r -> BkWt -> a
+bwAscalar {e: x} = case _ of
+    Bulk -> x
+    Weight -> zero
+
+bwApseudo :: forall a r. Semiring a =>
+    ApseudoRec a r -> BkWt -> a
+bwApseudo {e1234: x} = case _ of
+    Bulk -> zero
+    Weight -> x
+
+bwBivectors :: forall a r. BivectorsRec a r -> BkWt -> Array a
+bwBivectors
+    {e41: vx, e42: vy, e43: vz, e23: mx, e31: my, e12: mz} =
+    case _ of
+        Bulk -> [mx, my, mz]
+        Weight -> [vx, vy, vz]
+
+bwVectors :: forall a r. VectorsRec a r -> BkWt -> Array a
+bwVectors {e1: px, e2: py, e3: pz, e4: pw} = case _ of
+    Bulk ->[px, py, pz]
+    Weight -> [pw]
+
+bwTrivectors ::
+    forall a r. TrivectorsRec a r -> BkWt -> Array a
+bwTrivectors {e234: fx, e314: fy, e124: fz, e321: fw}
+    = case _ of
+        Bulk -> [fw]
+        Weight -> [fx, fy, fz]
+
+bwMotor :: forall a r. MotorRec a r -> BkWt -> Array a
+bwMotor
+    { e41: rx, e42: ry, e43: rz, e1234: rw
+    , e23: ux, e31: uy, e12: uz, e: uw} = case _ of
+        Bulk -> [ux, uy, uz]
+        Weight -> [rx, ry, rz]
+
+bwFlector :: forall a r. FlectorRec a r -> BkWt -> Array a
+bwFlector
+    { e1: sx, e2: sy, e3: sz, e4: sw
+    , e234: hx, e314: hy, e124: hz, e321: hw} = case _ of
+        Bulk -> [sx, sy, sz, hw]
+        Weight -> [hx, hy, hz, sw]
+
+bwMultivec :: forall a r. MultivecRec a r -> BkWt -> Array a
+bwMultivec x bw = bwMotor x bw <> bwFlector x bw
+
+
+geoPropMv :: forall a. Semiring a => (BkWt -> Array a) -> a
+geoPropMv f = sum <| zipWith (*) (f Bulk) (f Weight)
+
+bwNormMv :: forall a. Semiring a =>
+    (BkWt -> Array a) -> BkWt -> a
+bwNormMv f bw = sum <| map sq <| f bw
+
+sqrtNorm :: (BkWt -> Array Number) -> BkWt -> Number
+sqrtNorm f bw = sqrt (bwNormMv f bw)
+
+geoNormMv :: (BkWt -> Array Number) -> Number
+geoNormMv f = sqrt <| bwNormMv f Bulk / bwNormMv f Weight

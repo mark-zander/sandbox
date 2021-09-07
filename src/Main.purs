@@ -12,8 +12,10 @@ import Data.String.Pattern as P
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Foldable
+import Test.QuickCheck
 
 import Tables
+import Multivec
 
 createTerm :: Int -> Int -> Either String String
 createTerm a b = err a b <| pure "a." <> basis !! a
@@ -105,12 +107,19 @@ xxx tbl = combine <$> genMult tbl 0 (Right emptyAS)
 unPostfix :: String -> String
 unPostfix s = fromMaybe s <| S.stripSuffix (P.Pattern ",\n") s
 
-main :: Effect Unit
-main = do
+equivTbl :: Effect Unit
+equivTbl =
   for_ tables \{name, tab} -> do
     case xxx tab of
       Left l -> log l
       Right r -> log <| name <> " a b = \n {"
         <> unPostfix r <> "\n}\n"
 
+
+aScalarInt :: AscalarRec Int () -> AscalarRec Int ()
+aScalarInt = id
+
+main :: Effect Unit
+main = do
+  quickCheck \x y -> eq (aScalarInt x + y) (y + x)
 

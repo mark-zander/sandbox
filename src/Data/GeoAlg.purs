@@ -6,8 +6,12 @@ import ZPrelude
 import Data.Foldable
 import Data.Array
 import Data.Functor
+import Math (sqrt, abs)
+import Data.Generic.Rep
+import Test.QuickCheck.Arbitrary
 
 import Multivec
+import GMult
 
 -- Would this be easier using:
 -- import Data.Vec
@@ -28,6 +32,13 @@ data GeoAlg a = GeoAlg (MultivecRec a ())
     | Motor (MotorRec a ()) | Flector (FlectorRec a ())
 
 newtype DualGeo a = DualGeo (GeoAlg a)
+
+derive instance genericGeoAlg :: Generic (GeoAlg a) _
+
+instance arbitraryGeoAlg ::
+        (Generic (GeoAlg a) rep, Arbitrary rep) =>
+        Arbitrary (GeoAlg a) where
+    arbitrary = genericArbitrary
 
 instance eqGeoAlg :: (Eq a, Ring a) => Eq (GeoAlg a) where
     eq (Scalar x) (Scalar y) = x == y
@@ -67,8 +78,8 @@ showLine ::
 showLine x = showLine1 x <> "," <> showLine2 x
 
 showMotor :: forall a r. Show a => MotorRec a r -> String
-showMotor x = showLine1 x <> "," <> showApseudo x <> ", " <>
-    showLine2 x <> ", " <> showAscalar x
+showMotor x = showLine1 x <> "," <> showApseudoRec x <>
+    ", " <> showLine2 x <> ", " <> showAscalarRec x
 
 showFlector :: forall a r. Show a => FlectorRec a r -> String
 showFlector x = showVectorsRec x <> ", " <> showPlane x
@@ -80,26 +91,26 @@ instance showGeoAlg :: Show a => Show (GeoAlg a) where
     show (Point x) = "(Point " <> show x <> ")"
     show (Plane x) = "(Plane {" <> showPlane x <> "})"
     show (Line x) = "(Line {" <> showLine x <> "})"
-    show (Motor x) = "(Motor {" <> showMotor x <> ", " <>
-        showLine x <> ", " <> showAscalar x <> "})"
+    show (Motor x) = "(Motor {" <> showMotor x <> "})"
     show (Flector x) = "(Flector {" <> showFlector x <> "})"
     show (GeoAlg x) = "(GeoAlg " <>
         showMotor x <> ", " <> showFlector x <> "})"
 
 -- Contraction to subcomponent if possible
-contract :: forall a. Eq a => Ring a => GeoAlg a -> GeoAlg a
+contract :: forall a. Eq a => Semiring a =>
+    GeoAlg a -> GeoAlg a
 contract m@(Motor x) =
     case subMotor x of
     0 -> Scalar <| exAscalar id x
     1 -> Scalar <| exAscalar id x
     2 -> Line <| exBivectors id x
     4 -> Pseudo <| exApseudo id x
-    otherwise -> m
+    _ -> m
 contract f@(Flector x) =
     case subFlector x of
     8 -> Point <| exVectors id x
     16 -> Plane <| exTrivectors id x
-    otherwise -> f
+    _ -> f
 contract g@(GeoAlg x) = let sub = subMultivec x in
     case sub of
     0 -> Scalar <| exAscalar id x
@@ -113,7 +124,7 @@ contract g@(GeoAlg x) = let sub = subMultivec x in
 contract x = x
 
 -- expand a subvector to a full Multivector
-expand :: forall a. Ring a => GeoAlg a -> MultivecRec a ()
+expand :: forall a. Semiring a => GeoAlg a -> MultivecRec a ()
 expand (Scalar x) = inAscalar const x mvzero
 expand (Pseudo x) = inApseudo const x mvzero
 expand (Point x) = inVectors const x mvzero
@@ -123,13 +134,17 @@ expand (Motor x) = inMotor const x mvzero
 expand (Flector x) = inFlector const x mvzero
 expand (GeoAlg x) = x
 
-zeroG :: forall a. Semiring a => GeoAlg a
-zeroG = Scalar zero
+instance semiringGeoAlg ::
+    (Eq a, Ring a) => Semiring (GeoAlg a) where
+    zero = Pseudo zero
+    one = Pseudo one
+    add = addGeo
+    mul = geoAnti
 
-oneG :: forall a. Semiring a => GeoAlg a
-oneG = Scalar one
+instance ringGeoAlg :: (Eq a, Ring a) => Ring (GeoAlg a) where
+  sub = subGeo
 
-addGeo :: forall a. Ring a => GeoAlg a -> GeoAlg a -> GeoAlg a
+addGeo :: forall a. Semiring a => GeoAlg a -> GeoAlg a -> GeoAlg a
 addGeo (Scalar x) (Scalar y) = Scalar <| x + y
 addGeo (Scalar x) (Pseudo y) = Motor <| motorU x bivectors0 y
 addGeo (Scalar x) (Line y) = Motor <| motorU x y apseudo0
@@ -172,6 +187,7 @@ addGeo (Flector x) (GeoAlg y) = GeoAlg <| inFlector (+) x y
 addGeo (GeoAlg x) (GeoAlg y) = GeoAlg <| x + y
 addGeo x y = GeoAlg <| expand x + expand y
 
+-- called subtract in haskell
 revsub :: forall a. Ring a => a -> a -> a
 revsub x y = sub y x
 
@@ -224,3 +240,174 @@ subGeo (Flector x) (Plane y) = Flector <|
 subGeo (GeoAlg x) (GeoAlg y) = GeoAlg <| x - y
 subGeo x (GeoAlg y) = GeoAlg <| expand x - y
 subGeo x y = GeoAlg <| expand x - expand y
+
+-- Geometric products need component type of Ring as
+-- multiplies are computed with subtractions.
+geoProd :: forall a. Eq a => Ring a =>
+    GeoAlg a -> GeoAlg a -> GeoAlg a
+-- geoProd x y = GeoAlg <| gp (expand x) (expand y)
+geoProd x y = contract <| GeoAlg <| gp (expand x) (expand y)
+
+extProd :: forall a. Eq a => Ring a =>
+    GeoAlg a -> GeoAlg a -> GeoAlg a
+extProd x y = contract <| GeoAlg <| xp (expand x) (expand y)
+
+geoAnti :: forall a. Eq a => Ring a =>
+    GeoAlg a -> GeoAlg a -> GeoAlg a
+geoAnti x y = contract <| GeoAlg <| gap (expand x) (expand y)
+
+extAnti :: forall a. Eq a => Ring a =>
+    GeoAlg a -> GeoAlg a -> GeoAlg a
+extAnti x y = contract <| GeoAlg <| xap (expand x) (expand y)
+
+-- Unary operations
+
+reverse :: forall a. Ring a => GeoAlg a -> GeoAlg a
+reverse (Scalar x) = Scalar x
+reverse (Pseudo x) = Pseudo x
+reverse (Line x) = Line <| negate x
+reverse (Point x) = Point <| x
+reverse (Plane x) = Plane <| negate x
+reverse (Motor x) =
+    Motor <| inBivectors (negate << const) x x
+reverse (Flector x) =
+    Flector <| inTrivectors (negate << const) x x
+reverse (GeoAlg x) = GeoAlg
+    <| inBivectors (negate << const) x
+    <| inTrivectors (negate << const) x x
+
+antireverse :: forall a. Ring a => GeoAlg a -> GeoAlg a
+antireverse (Scalar x) = Scalar x
+antireverse (Pseudo x) = Pseudo x
+antireverse (Line x) = Line <| negate x
+antireverse (Point x) = Point <| negate x
+antireverse (Plane x) = Plane x
+antireverse (Motor x) =
+    Motor <| inBivectors (negate << const) x x
+antireverse (Flector x) =
+    Flector <| inVectors (negate << const) x x
+antireverse (GeoAlg x) = GeoAlg
+    <| inBivectors (negate << const) x
+    <| inVectors (negate << const) x x
+
+rightComp :: forall a. Ring a => GeoAlg a -> GeoAlg a
+rightComp (Scalar x) = Pseudo <| compAscalar id x
+rightComp (Pseudo x) = Scalar <| compApseudo id x
+rightComp (Line x) = Line <| compBivectors negate x
+rightComp (Point x) = Plane <| compVectors id x
+rightComp (Plane x) = Point <| compTrivectors negate x
+rightComp (Motor x) = let xx = compMotor id x in Motor
+    <| inBivectors (negate << const) xx xx
+rightComp (Flector x) = let xx = compFlector id x in Flector
+    <| inVectors (negate << const) xx xx
+rightComp (GeoAlg x) = let xx = compMultivec id x in GeoAlg
+    <| inBivectors (negate << const) xx
+    <| inVectors (negate << const) xx xx
+
+leftComp :: forall a. Ring a => GeoAlg a -> GeoAlg a
+leftComp (Scalar x) = Pseudo <| compAscalar id x
+leftComp (Pseudo x) = Scalar <| compApseudo id x
+leftComp (Line x) = Line <| compBivectors negate x
+leftComp (Point x) = Plane <| compVectors negate x
+leftComp (Plane x) = Point <| compTrivectors id x
+leftComp (Motor x) = let xx = compMotor id x in Motor
+    <| inBivectors (negate << const) xx xx
+leftComp (Flector x) = let xx = compFlector id x in Flector
+    <| inTrivectors (negate << const) xx xx
+leftComp (GeoAlg x) = let xx = compMultivec id x in GeoAlg
+    <| inBivectors (negate << const) xx
+    <| inTrivectors (negate << const) xx xx
+
+dblComp :: forall a. Ring a => GeoAlg a -> GeoAlg a
+dblComp (Scalar x) = Scalar x
+dblComp (Pseudo x) = Pseudo x
+dblComp (Line x) = Line <| x
+dblComp (Point x) = Point <| negate x
+dblComp (Plane x) = Plane <| negate x
+dblComp (Motor x) = Motor <| x
+dblComp (Flector x) = Flector <| negate x
+dblComp (GeoAlg x) = GeoAlg <| inFlector (negate << const) x x
+
+bulk :: forall a. Semiring a => GeoAlg a -> GeoAlg a
+bulk (Scalar x) = Scalar x
+bulk (Pseudo x) = Pseudo zero
+bulk (Line x) = Line <| bivectors0
+    { e23 = x.e23, e31 = x.e31, e12 = x.e12 }
+bulk (Point x) = Point <| vectors0
+    { e1 = x.e1, e2 = x.e2, e3 = x.e3 }
+bulk (Plane x) = Plane <| trivectors0 { e321 = x.e321 }
+bulk (Motor x) = Motor <| motor0
+    { e = x.e, e23 = x.e23, e31 = x.e31, e12 = x.e12 }
+bulk (Flector x) = Flector <| flector0
+    { e1 = x.e1, e2 = x.e2, e3 = x.e3 }
+bulk (GeoAlg x) = GeoAlg <| mvzero
+    { e = x.e, e23 = x.e23, e31 = x.e31, e12 = x.e12
+    , e1 = x.e1, e2 = x.e2, e3 = x.e3, e321 = x.e321}
+
+weight :: forall a. Semiring a => GeoAlg a -> GeoAlg a
+weight (Scalar x) = Scalar zero
+weight (Pseudo x) = Pseudo x
+weight (Line x) = Line <| bivectors0
+    { e43 = x.e43, e42 = x.e42, e41 = x.e41 }
+weight (Point x) = Point <| vectors0 { e4 = x.e4 }
+weight (Plane x) = Plane <| trivectors0
+    { e124 = x.e124, e314 = x.e314, e234 = x.e234}
+weight (Motor x) = Motor <| motor0
+    { e43 = x.e43, e42 = x.e42, e41 = x.e41, e1234 = x.e1234 }
+weight (Flector x) = Flector <| flector0
+    { e4 = x.e4, e124 = x.e124, e314 = x.e314, e234 = x.e234 }
+weight (GeoAlg x) = GeoAlg <| mvzero
+    { e43 = x.e43, e42 = x.e42, e41 = x.e41, e1234 = x.e1234
+    , e4 = x.e4, e124 = x.e124, e314 = x.e314, e234 = x.e234 }
+
+-- How to create a value of geoProp?
+geoProp :: forall a. Eq a => Semiring a => GeoAlg a -> Boolean
+geoProp (Scalar x) = true
+geoProp (Pseudo x) = true
+geoProp (Point x) = true
+geoProp (Plane x) = true
+geoProp (Line x) = geoPropMv (bwBivectors x) == zero
+geoProp (Motor x) = geoPropMv (bwMotor x) == zero
+geoProp (Flector x) = geoPropMv (bwFlector x) == zero
+-- This is a guess, needs to be calculated.
+geoProp (GeoAlg x) = geoPropMv (bwMultivec x) == zero
+
+-- bulkNorm x = fold (+) map sq bulk x
+normType :: BkWt -> Number -> GeoAlg Number
+normType Bulk x = Scalar {e: x}
+normType Weight x = Pseudo {e1234: x}
+
+bwNorm :: BkWt -> GeoAlg Number -> GeoAlg Number
+bwNorm bw (Scalar x) = normType bw <| abs (bwAscalar x bw)
+bwNorm bw (Pseudo x) = normType bw <| abs (bwApseudo x bw)
+bwNorm bw (Line x) = normType bw <| sqrtNorm (bwBivectors x) bw
+bwNorm bw (Point x) = normType bw <| sqrtNorm (bwVectors x) bw
+bwNorm bw (Plane x) =
+    normType bw <| sqrtNorm (bwTrivectors x) bw
+bwNorm bw (Motor x) = normType bw <| sqrtNorm (bwMotor x) bw
+bwNorm bw (Flector x) =
+    normType bw <| sqrtNorm (bwFlector x) bw
+bwNorm bw (GeoAlg x) =
+    normType bw <| sqrtNorm (bwMultivec x) bw
+
+geoNorm :: GeoAlg Number -> GeoAlg Number
+geoNorm (Scalar x) = normType Bulk <| abs (bwAscalar x Bulk)
+geoNorm (Pseudo x) = normType Bulk <| zero
+geoNorm (Line x) = normType Bulk <| geoNormMv (bwBivectors x)
+geoNorm (Point x) = normType Bulk <| geoNormMv (bwVectors x)
+geoNorm (Plane x) = normType Bulk <| geoNormMv (bwTrivectors x)
+geoNorm (Motor x) = normType Bulk <| geoNormMv (bwMotor x)
+geoNorm (Flector x) = normType Bulk <| geoNormMv (bwFlector x)
+geoNorm (GeoAlg x) = normType Bulk <| geoNormMv (bwMultivec x)
+
+-- How to create a unitized value?
+isUnit :: forall a. Eq a => Semiring a => GeoAlg a -> Boolean
+isUnit (Scalar x) = false
+isUnit (Pseudo x) = x.e1234 == one
+isUnit (Line x) = bwNormMv (bwBivectors x) Weight == one
+isUnit (Point x) = bwNormMv (bwVectors x) Weight == one
+isUnit (Plane x) = bwNormMv (bwTrivectors x) Weight == one
+isUnit (Motor x) = bwNormMv (bwMotor x) Weight == one
+isUnit (Flector x) = bwNormMv (bwFlector x) Weight == one
+isUnit (GeoAlg x) = bwNormMv (bwMultivec x) Weight == one
+
