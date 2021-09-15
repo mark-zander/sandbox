@@ -18,7 +18,7 @@ import Type.Proxy (Proxy(..), Proxy2(..))
 
 import Tables
 import Multivec
-import GeoAlg
+import GeoAlgType
 
 main :: Effect Unit
 main = do

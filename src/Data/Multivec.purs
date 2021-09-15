@@ -1,3 +1,5 @@
+-- | 16 Basis elements of the 4D projective geometric algebra
+-- | broken into groups.
 module Multivec where
 
 import ZPrelude
@@ -5,10 +7,9 @@ import ZPrelude
 -- import Prim.Row
 
 import Data.Array (zipWith)
-import Record
-import Data.Either
-import Math
-import Data.Foldable
+import Record (disjointUnion)
+import Math (sqrt)
+import Data.Foldable (sum)
 
 -- Rows - basic elements of Projective GA
 
@@ -105,7 +106,8 @@ showTrivectorsRec x =
         ", e314: " <> show x.e314 <>
         ", e234: " <> show x.e234
 
--- Force the element order to be the same as in code
+-- Force the element order to be the same as in the
+-- Cayley Tables.
 
 showAscalar :: forall a r. Show a => AscalarRec a r -> String
 showAscalar x = "{" <> showAscalarRec x <> "}"
@@ -143,8 +145,8 @@ showMultivec x = "{" <>
     showTrivectorsRec x <> ", " <>
     showApseudoRec x <> "}"
 
--- Combine scalars from 2 record arguments then insert into
--- first record argument.
+-- Combine values from 2 record arguments then insert into
+-- second record argument.
 inAscalar :: forall a b c r rr. (a -> b -> c) ->
     AscalarRec a rr -> AscalarRec b r -> AscalarRec c r
 inAscalar f x y = y { e = f x.e y.e }

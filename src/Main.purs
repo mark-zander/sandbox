@@ -12,7 +12,6 @@ import Data.String.Pattern as P
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Foldable
-import Test.QuickCheck
 
 import Tables
 import Multivec
@@ -121,5 +120,4 @@ aScalarInt = id
 
 main :: Effect Unit
 main = do
-  quickCheck \x y -> eq (aScalarInt x + y) (y + x)
-
+  equivTbl 
