@@ -94,6 +94,9 @@ instance showGeoAlg :: Show a => Show (GeoAlg a) where
     show (GeoAlg x) = "(GeoAlg " <>
         showMotor x <> ", " <> showFlector x <> "})"
 
+-- Contracts zero to a scalar, should this be a Pseudo?
+-- Depends on choice of multiply?
+-- Or it might not really matter.
 -- Contraction to subcomponent if possible
 contract :: forall a. Eq a => Semiring a =>
     GeoAlg a -> GeoAlg a
@@ -136,11 +139,11 @@ instance semiringGeoAlg ::
     (Eq a, Ring a) => Semiring (GeoAlg a) where
     zero = Pseudo zero
     one = Pseudo one
-    add = addGeo
+    add x = contract << addGeo x
     mul = geoAnti
 
 instance ringGeoAlg :: (Eq a, Ring a) => Ring (GeoAlg a) where
-  sub = subGeo
+  sub x = contract << subGeo x
 
 addGeo :: forall a. Semiring a => GeoAlg a -> GeoAlg a -> GeoAlg a
 addGeo (Scalar x) (Scalar y) = Scalar <| x + y
@@ -185,59 +188,28 @@ addGeo (Flector x) (GeoAlg y) = GeoAlg <| inFlector (+) x y
 addGeo (GeoAlg x) (GeoAlg y) = GeoAlg <| x + y
 addGeo x y = GeoAlg <| expand x + expand y
 
--- called subtract in haskell
-revsub :: forall a. Ring a => a -> a -> a
-revsub x y = sub y x
+negGeo :: forall a. Ring a => GeoAlg a -> GeoAlg a
+negGeo (Scalar x) = Scalar (negate x)
+negGeo (Pseudo x) = Pseudo (negate x)
+negGeo (Line x) = Line (negate x)
+negGeo (Point x) = Point (negate x)
+negGeo (Plane x) = Plane (negate x)
+negGeo (Motor x) = Motor (negate x)
+negGeo (Flector x) = Flector (negate x)
+negGeo (GeoAlg x) = GeoAlg (negate x)
 
 subGeo :: forall a. Ring a => GeoAlg a -> GeoAlg a -> GeoAlg a
+subGeo x (Scalar y) = addGeo x <| Scalar (negate y)
+subGeo x (Pseudo y) = addGeo x <| Pseudo (negate y)
+subGeo x (Line y) = addGeo x <| Line (negate y)
+subGeo x (Point y) = addGeo x <| Point (negate y)
+subGeo x (Plane y) = addGeo x <| Plane (negate y)
+subGeo x (Motor y) = addGeo x <| Motor (negate y)
+subGeo x (Flector y) = addGeo x <| Flector (negate y)
+subGeo x (GeoAlg y) = addGeo x <| GeoAlg (negate y)
 
-subGeo (Scalar x) (Scalar y) = Scalar <| x - y
-subGeo (Scalar x) (Pseudo y) = Motor <|
-    motorU x bivectors0 (negate y)
-subGeo (Scalar x) (Line y) = Motor <|
-    motorU x (negate y) apseudo0
-subGeo (Scalar x) (Motor y) = Motor <|
-    inAscalar (+) x (negate y)
-
-subGeo (Pseudo x) (Pseudo y) = Pseudo <| x - y
-subGeo (Pseudo x) (Scalar y) = Motor <|
-    motorU (negate y) bivectors0 x
-subGeo (Pseudo x) (Line y) = Motor <|
-    motorU ascalar0 (negate y) x
-subGeo (Pseudo x) (Motor y) = Motor <|
-    inApseudo (+) x (negate y)
-
-subGeo (Line x) (Line y) = Line <| x - y
-subGeo (Line x) (Scalar y) = Motor <|
-    motorU (negate y) x apseudo0
-subGeo (Line x) (Pseudo y) = Motor <|
-    motorU ascalar0 x <| negate y
-subGeo (Line x) (Motor y) = Motor
-    (inBivectors (+) x (negate y))
-
-subGeo (Point x) (Point y) = Point <| x - y
-subGeo (Point x) (Plane y) = Flector <| flectorU x (negate y)
-subGeo (Point x) (Flector y) = Flector <|
-    inVectors (+) x (negate y)
-
-subGeo (Plane x) (Plane y) = Plane <| x - y
-subGeo (Plane x) (Point y) = Flector <| flectorU (negate y) x
-subGeo (Plane x) (Flector y) = Flector <|
-    inTrivectors (+) x (negate y)
-
-subGeo (Motor x) (Motor y) = Motor <| x - y
-subGeo (Motor x) (Scalar y) = Motor <| inAscalar revsub y x
-subGeo (Motor x) (Pseudo y) = Motor <| inApseudo revsub y x
-subGeo (Motor x) (Line y) = Motor <| inBivectors revsub y x
-
-subGeo (Flector x) (Flector y) = Flector <| x - y
-subGeo (Flector x) (Point y) = Flector <| inVectors revsub y x
-subGeo (Flector x) (Plane y) = Flector <|
-    inTrivectors revsub y x
-
-subGeo (GeoAlg x) (GeoAlg y) = GeoAlg <| x - y
-subGeo x (GeoAlg y) = GeoAlg <| expand x - y
-subGeo x y = GeoAlg <| expand x - expand y
+-- multGeo :: forall a. Ring a => GeoAlg a -> GeoAlg a -> GeoAlg a
+-- multGeo f (Scalar x) (Scalar y) = f x y
 
 -- Geometric products need component type of Ring as
 -- multiplies are computed with subtractions.

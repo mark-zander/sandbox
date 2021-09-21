@@ -12,36 +12,35 @@ import Data.String.Pattern as P
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Foldable
+import Data.Traversable
 
 import Tables
 import Multivec
 
-createTerm :: Int -> Int -> Either String String
+type Err a = Either String a
+data Value = E Int | None
+
+createTerm :: Int -> Int -> Err String
 createTerm a b = err a b <| pure "a." <> basis !! a
     <> pure " * b." <> basis !! b
 
-err :: forall a. Int -> Int -> Maybe a -> Either String a
+err :: forall a. Int -> Int -> Maybe a -> Err a
 err a b (Just x) = Right x
 err a b Nothing = Left <| show a <> " " <> show b
 
 -- Index 2D Array
-ix2 :: forall x.
-    Array (Array x) -> Int -> Int -> Either String x
+ix2 :: forall x. Array (Array x) -> Int -> Int -> Err x
 ix2 tbl a b = err a b <| (tbl !! a) >>= (_ !! b)
-
-data Value = E Int | None
 
 instance showValue :: Show Value where
   show None = "None"
   show (E x) = "(E " <> show x <> ")"
 
-mkTuple :: String -> Either String Int ->
-    Either String (Tuple String Value)
+mkTuple :: String -> Err Int -> Err (Tuple String Value)
 mkTuple sign (Left l) = Left l
 mkTuple sign (Right x) = Right (Tuple sign (E x))
 
-interpEntry :: Either String String ->
-    Either String (Tuple String Value)
+interpEntry :: Err String -> Err (Tuple String Value)
 interpEntry (Right x)
   | x          ==  "0" = Right <| Tuple "" None
   | x          ==  "1" = mkTuple " + "  <| Right 0
@@ -55,10 +54,8 @@ interpEntry (Right x)
   | otherwise          = Left <| "interp other = " <> x
 interpEntry (Left l) = Left <| "interp bad arg = " <> l
 
-modifier :: Either String String ->
-    Either String (Tuple String Value) ->
-    Either String (Array String) ->
-    Either String (Array String)
+modifier :: Err String -> Err (Tuple String Value) ->
+    Err Basis -> Err Basis
 modifier (Right term) (Right (Tuple sign (E ix))) (Right r) =
   note ("modify " <> show ix)
   (modifyAt ix (_ <> (sign <> term)) r)
@@ -66,16 +63,16 @@ modifier _ (Right (Tuple _ None)) r = r
 modifier a b c = Left <| show a <> " <> " <> show b
     <> " <> " <> show c
 
-genRow :: CayleyTable -> Int -> Int ->
-  Either String (Array String) ->
-  Either String (Array String)
+genRow :: CayleyTable -> Int -> Int -> Err Basis -> Err Basis
 genRow _ _ _ (Left r) = Left r
 genRow tbl a b res =
   if b > 15 then res
   else genRow tbl a (b + 1) <| modifier (createTerm a b)
       (interpEntry <| ix2 tbl a b) res
 
-genMult :: CayleyTable -> Int -> Either String (Array String) -> Either String (Array String)
+-- genMult and genRow modified to iterate through a basis
+-- rather than just 0 .. 15
+genMult :: CayleyTable -> Int -> Err Basis -> Err Basis
 genMult _ _ (Left r) = Left r
 genMult tbl a res =
   if a > 15 then res
@@ -83,7 +80,7 @@ genMult tbl a res =
 
 -- Concatenate basis with multiply strings
 -- Get rid of + or - prefix on each string
-combine :: Array String -> String
+combine :: Basis -> String
 combine = fold <<< zipWith append basis
   <<< map (\s -> ":" <> unPrefix s <> ",\n")
 
@@ -100,7 +97,7 @@ unPrefix s = let ss = S.splitAt 2 s in
   else if ss.before == " -" then " negate" <> ss.after
   else s 
 
-xxx :: CayleyTable -> Either String String
+xxx :: CayleyTable -> Err String
 xxx tbl = combine <$> genMult tbl 0 (Right emptyAS)
 
 unPostfix :: String -> String
@@ -114,10 +111,36 @@ equivTbl =
       Right r -> log <| name <> " a b = \n {"
         <> unPostfix r <> "\n}\n"
 
+toIndex :: Basis -> Err (Array Int)
+toIndex = sequence << map elmIdx
+elmIdx :: String -> Err Int
+elmIdx x = note ("bad value: " <> x) <| elemIndex x basis
 
-aScalarInt :: AscalarRec Int () -> AscalarRec Int ()
-aScalarInt = id
+genMult2 :: CayleyTable -> Basis -> Basis -> Err Basis
+genMult2 tbl aTbl bTbl = let
+  aIndx = toIndex aTbl
+  bIndx = toIndex bTbl
+  genElem :: Int -> Err Basis -> Int -> Err Basis
+  genElem a res b = modifier (createTerm a b)
+    (interpEntry <| ix2 tbl a b) res
+  genrow :: Err Basis -> Int -> Err Basis
+  genrow res a = either Left (foldl (genElem a) res) bIndx
+  in either Left (foldl genrow (Right emptyAS)) aIndx
+
+xxxx :: CayleyTable -> Basis -> Basis -> Err String
+xxxx tbl aTbl bTbl = combine <$> genMult2 tbl aTbl bTbl
+
+mkMult :: Effect Unit
+mkMult =
+  for_ moreTables \{name, tab, x1, x2} -> do
+    case xxxx tab x1 x2 of
+      Left l -> log l
+      Right r -> log <| name <> " a b = \n {"
+        <> unPostfix r <> "\n}\n"
+
+--------------------------------------------------------
 
 main :: Effect Unit
 main = do
-  equivTbl 
+  -- equivTbl
+  mkMult
