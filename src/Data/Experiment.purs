@@ -96,19 +96,8 @@ instance altZipArray :: Alt ZipArray where
 instance plusZipArray :: Plus ZipArray where
   empty = mempty
 
--- rewrite without using pure?
+-- Requires Applicative/pure
 -- instance alternativeZipArray :: Alternative ZipArray
-
-instance zipArrayIsNotBind
-  :: Fail (Text """
-    ZipArray is not Bind. Any implementation would break the associativity law.
-
-    Possible alternatives:
-        Data.List.List
-        Data.List.Lazy.List
-    """)
-  => Bind ZipArray where
-    bind = unsafeCrashWith "bind: unreachable"
 
 
 -- Tuples using records
