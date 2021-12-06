@@ -5,14 +5,15 @@ import Multivec
 
 import Control.Alt (class Alt)
 import Control.Alternative (class Alternative)
-import Data.Array (drop, length, zipWith)
+import Data.Array
 import Control.Plus (class Plus)
 import Data.Foldable (class Foldable)
-import Data.Newtype (class Newtype)
+import Data.Newtype (un, unwrap, class Newtype)
+import Data.Ordering (invert)
 import Data.Traversable (class Traversable)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.TypeError (class Fail, Text)
-
+import Data.Maybe
 
 toArray :: forall a. MultivecRec a () -> Array a
 toArray x = [x.e, x.e1, x.e2, x.e3, x.e4
@@ -60,44 +61,7 @@ data Arr16 a = Arr16 a a a a a a a a a a a a a a a a
 -- Also has a return type, ie: e314
 
 
--- ZipArray
 
-newtype ZipArray a = ZipArray (Array a)
-
-instance showZipArray :: Show a => Show (ZipArray a) where
-  show (ZipArray xs) = "(ZipArray " <> show xs <> ")"
-
-derive instance newtypeZipArray :: Newtype (ZipArray a) _
-
-derive newtype instance eqZipArray :: Eq a => Eq (ZipArray a)
-
-derive newtype instance ordZipArray :: Ord a => Ord (ZipArray a)
-
-derive newtype instance semigroupZipArray :: Semigroup (ZipArray a)
-
-derive newtype instance monoidZipArray :: Monoid (ZipArray a)
-
-derive newtype instance foldableZipArray :: Foldable ZipArray
-
-derive newtype instance traversableZipArray :: Traversable ZipArray
-
-derive newtype instance functorZipArray :: Functor ZipArray
-
-instance applyZipArray :: Apply ZipArray where
-  apply (ZipArray fs) (ZipArray xs) = ZipArray (zipWith ($) fs xs)
-
--- How to rewrite?
--- instance applicativeZipArray :: Applicative ZipArray where
---   pure = ZipArray <<< repeat
-
-instance altZipArray :: Alt ZipArray where
-  alt (ZipArray xs) (ZipArray ys) = ZipArray $ xs <> drop (length xs) ys
-
-instance plusZipArray :: Plus ZipArray where
-  empty = mempty
-
--- Requires Applicative/pure
--- instance alternativeZipArray :: Alternative ZipArray
 
 
 -- Tuples using records
@@ -118,3 +82,5 @@ type Tuple03 a b c r = Record (T03 a b c r)
 -- mkT02 a b = {t02: b, (mkT01 a)}
 
 data E a = E {e:: a}
+
+
