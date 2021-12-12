@@ -10,6 +10,7 @@ import Data.Maybe
 import Data.Generic.Rep
 import Data.Generic.Rep.Bounded
 import Data.Generic.Rep.Enum
+import Data.Generic.Rep.Show
 import Data.Array as Array
 import Data.Newtype
 import Partial.Unsafe (unsafePartial)
@@ -33,6 +34,8 @@ data Element = E | E1 | E2 | E3 | E4 |
 derive instance eqElement :: Eq Element
 derive instance ordElement :: Ord Element
 derive instance genericElement :: Generic Element _
+instance showElement :: Show Element where
+  show = genericShow
 instance boundedElement :: Bounded Element where
   bottom = genericBottom   
   top = genericTop
