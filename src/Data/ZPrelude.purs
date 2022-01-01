@@ -1,19 +1,22 @@
 module ZPrelude
-    ( (<|)
-    , (|>)
-    , (<<)
-    , (>>)
-    , (//)
-    , fromChoice
-    , sq
-    , id
-    , module ReExports
-    ) where
+  ( (//)
+  , (<<)
+  , (<|)
+  , (>>)
+  , (|>)
+  , fromChoice
+  , id
+  , minus
+  , module ReExports
+  , sq
+  )
+  where
 
 import Control.Semigroupoid (compose, composeFlipped)
 import Data.Function (apply, applyFlipped, flip, const)
 import Prelude as ReExports
 import Data.Foldable
+import Data.Ring
 
 -- from Paxl.Prelude
 infixr 0 apply as <|
@@ -33,3 +36,5 @@ sq x = ReExports.mul x x
 id :: forall c t. ReExports.Category c => c t t
 id = ReExports.identity
 
+minus :: forall a. Ring a => a -> a -> a
+minus x y = sub y x

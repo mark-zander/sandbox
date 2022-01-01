@@ -24,6 +24,7 @@ createTerm :: Int -> Int -> Err String
 createTerm a b = err a b <| pure "a." <> basis !! a
     <> pure " * b." <> basis !! b
 
+-- err a b = note (show a <> " " <> show b)
 err :: forall a. Int -> Int -> Maybe a -> Err a
 err a b (Just x) = Right x
 err a b Nothing = Left <| show a <> " " <> show b
